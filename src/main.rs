@@ -29,7 +29,7 @@ fn main() {
         .add_startup_system(spawn_camera)
         .add_startup_system(hide_cursor)
         .add_plugins(DefaultPlugins)
-        .add_plugin(DebugPlugin)
+        // .add_plugin(DebugPlugin)
         .add_plugin(WorldPlugin)
         .add_plugin(ShapePlugin)
         .add_plugin(VehiclePlugin)

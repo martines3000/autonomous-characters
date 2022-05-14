@@ -10,8 +10,8 @@ use rand::prelude::*;
 
 use crate::{world::WALL_MARGIN, MainCamera};
 
-const VEHICLE_COUNT: usize = 2000;
-const VEHICLE_SIZE: f32 = 5.0;
+const VEHICLE_COUNT: usize = 100;
+const VEHICLE_SIZE: f32 = 10.0;
 const VEHICLE_MAX_SPEED: f32 = 300.0;
 const VEHICLE_MAX_SPEED_VEC: Vec2 = const_vec2!([VEHICLE_MAX_SPEED; 2]);
 const VEHICLE_MAX_FORCE: Vec2 = const_vec2!([80.0; 2]);
@@ -273,25 +273,29 @@ fn calc_movement(
 
         // Folow mouse position
         if buttons.pressed(MouseButton::Left) {
-            vehicle_query.for_each_mut(|(velocity, transform, mut acceleration, mass, _)| {
-                let mut desired = Vec2::ZERO;
-                seek_steer(&world_pos, &transform, &mut desired);
+            vehicle_query.par_for_each_mut(
+                &task_pool,
+                500,
+                |(velocity, transform, mut acceleration, mass, _)| {
+                    let mut desired = Vec2::ZERO;
+                    seek_steer(&world_pos, &transform, &mut desired);
 
-                acceleration.apply_force(
-                    (desired - velocity.0).clamp(-VEHICLE_MAX_FORCE, VEHICLE_MAX_FORCE)
-                        * VEHICLE_TARGET_FACTOR,
-                    mass,
-                );
+                    acceleration.apply_force(
+                        (desired - velocity.0).clamp(-VEHICLE_MAX_FORCE, VEHICLE_MAX_FORCE)
+                            * VEHICLE_TARGET_FACTOR,
+                        mass,
+                    );
 
-                flock(
-                    &mut acceleration,
-                    &transform,
-                    &velocity,
-                    mass,
-                    &other_vehicle_query,
-                    &task_pool,
-                );
-            });
+                    flock(
+                        &mut acceleration,
+                        &transform,
+                        &velocity,
+                        mass,
+                        &other_vehicle_query,
+                        &task_pool,
+                    );
+                },
+            );
 
             wander = false;
         }
