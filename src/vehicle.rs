@@ -7,24 +7,36 @@ use rand::prelude::*;
 
 use crate::{world::WALL_MARGIN, MainCamera};
 
-const WORLD_SIZE: Size<f32> = Size {
-    height: 300.0,
-    width: 300.0,
-};
-
+const VEHICLE_COUNT: usize = 500;
 const VEHICLE_SIZE: f32 = 10.0;
 const VEHICLE_MAX_SPEED: f32 = 300.0;
 const VEHICLE_MAX_SPEED_VEC: Vec2 = const_vec2!([VEHICLE_MAX_SPEED; 2]);
-const VEHICLE_MAX_FORCE: Vec2 = const_vec2!([50.0; 2]);
+const VEHICLE_MAX_FORCE: Vec2 = const_vec2!([80.0; 2]);
 const VEHICLE_MASS: f32 = 10.0;
 const VEHICLE_BODY_COLOR: Color = Color::WHITE;
 const VEHICLE_EDGE_COLOR: Color = Color::BLUE;
-const VEHICLE_WANDER_SPEED: f32 = 200.0;
+const VEHICLE_WANDER_SPEED: f32 = 150.0;
 const VEHICLE_PREDICT_DISTANCE: f32 = 300.0;
 const VEHICLE_PREDICT_RADIUS: f32 = 100.0;
 
+// Distances
+const VEHICLE_SEPERATION_DIST: f32 = VEHICLE_SIZE * 2.0;
+const VEHICLE_ALIGN_DIST: f32 = VEHICLE_SIZE * 6.0;
+const VEHICLE_COHESION_DIST: f32 = VEHICLE_SIZE * 6.0;
+const VEHICLE_SEPERATION_DIST_SQ: f32 = VEHICLE_SEPERATION_DIST * VEHICLE_SEPERATION_DIST;
+const VEHICLE_ALIGN_DIST_SQ: f32 = VEHICLE_ALIGN_DIST * VEHICLE_ALIGN_DIST;
+const VEHICLE_COHESION_DIST_SQ: f32 = VEHICLE_COHESION_DIST * VEHICLE_COHESION_DIST;
+
+// Force factors
+const VEHICLE_SEPERATION_FACTOR: f32 = 1.8;
+const VEHICLE_ALIGN_FACTOR: f32 = 1.2;
+const VEHICLE_COHESION_FACTOR: f32 = 0.6;
+const VEHICLE_LIMIT_FACTOR: f32 = 1.6;
+const VEHICLE_TARGET_FACTOR: f32 = 1.4;
+const VEHICLE_WANDER_FACTOR: f32 = 1.0;
+
 const LINE_WIDTH: f32 = 2.0;
-pub const TARGET_RADIUS: f32 = 50.0;
+pub const TARGET_RADIUS: f32 = 100.0;
 
 pub struct VehiclePlugin;
 
@@ -57,12 +69,14 @@ impl Plugin for VehiclePlugin {
     }
 }
 
-fn spawn_vehicles(mut commands: Commands) {
+fn spawn_vehicles(mut commands: Commands, windows: Res<Windows>) {
     let mut rng = rand::thread_rng();
+    let window = windows.get_primary().unwrap();
+    let window_size = Vec2::new(window.width() as f32, window.height() as f32) / 2.0 - WALL_MARGIN;
 
-    for i in 0..500 {
-        let x = rng.gen_range(-WORLD_SIZE.width..WORLD_SIZE.width);
-        let y = rng.gen_range(-WORLD_SIZE.width..WORLD_SIZE.width);
+    for i in 0..=VEHICLE_COUNT {
+        let x = rng.gen_range(-window_size.x..window_size.x);
+        let y = rng.gen_range(-window_size.y..window_size.y);
 
         let shape = shapes::RegularPolygon {
             sides: 3,
@@ -102,10 +116,113 @@ fn spawn_vehicles(mut commands: Commands) {
     }
 }
 
+fn seek_steer(world_pos: &Vec2, transform: &Transform, desired: &mut Vec2) {
+    *desired = *world_pos - transform.translation.truncate();
+
+    let dist = desired.length();
+
+    *desired = desired.normalize_or_zero();
+
+    if dist < TARGET_RADIUS {
+        *desired *= dist / TARGET_RADIUS * VEHICLE_MAX_SPEED;
+    } else {
+        *desired *= VEHICLE_MAX_SPEED;
+    }
+}
+
+fn flock(
+    acceleration: &mut Acceleration,
+    transform: &Transform,
+    velocity: &Velocity,
+    mass: &Mass,
+    other_vehicle_query: &Query<(&Transform, &Velocity), With<Vehicle>>,
+) {
+    // Seperate
+    let mut seperate_sum = Vec2::new(0.0, 0.0);
+    let mut seperate_count = 0;
+
+    // Align
+    let mut align_sum = Vec2::new(0.0, 0.0);
+    let mut align_count = 0;
+
+    // Cohesion
+    let mut cohesion_sum = Vec2::new(0.0, 0.0);
+    let mut cohesion_count = 0;
+
+    other_vehicle_query.for_each(|(other_transform, other_velocity)| {
+        let dist = transform
+            .translation
+            .truncate()
+            .distance_squared(other_transform.translation.truncate());
+
+        // Seperate
+        if dist > 0.0 {
+            if dist <= VEHICLE_SEPERATION_DIST_SQ {
+                seperate_sum += (transform.translation.truncate()
+                    - other_transform.translation.truncate())
+                .normalize_or_zero()
+                    / dist.sqrt();
+
+                seperate_count += 1;
+            }
+
+            // Align
+            if dist <= VEHICLE_ALIGN_DIST_SQ {
+                align_sum += other_velocity.0;
+                align_count += 1;
+            }
+
+            // Cohesion
+            if dist <= VEHICLE_COHESION_DIST_SQ {
+                cohesion_sum += other_transform.translation.truncate();
+                cohesion_count += 1;
+            }
+        }
+    });
+
+    // Seperate
+    if seperate_count > 0 {
+        seperate_sum /= seperate_count as f32;
+        seperate_sum = seperate_sum.normalize_or_zero() * VEHICLE_MAX_SPEED;
+
+        acceleration.apply_force(
+            (seperate_sum - velocity.0).clamp(-VEHICLE_MAX_FORCE, VEHICLE_MAX_FORCE)
+                * VEHICLE_SEPERATION_FACTOR,
+            mass,
+        );
+    }
+
+    // Align
+    if align_count > 0 {
+        align_sum /= align_count as f32;
+        align_sum = align_sum.normalize_or_zero() * VEHICLE_MAX_SPEED;
+
+        acceleration.apply_force(
+            (align_sum - velocity.0).clamp(-VEHICLE_MAX_FORCE, VEHICLE_MAX_FORCE)
+                * VEHICLE_ALIGN_FACTOR,
+            mass,
+        );
+    }
+
+    // Cohesion
+    if cohesion_count > 0 {
+        let mut desired = Vec2::ZERO;
+        cohesion_sum /= cohesion_count as f32;
+
+        seek_steer(&cohesion_sum, &transform, &mut desired);
+
+        acceleration.apply_force(
+            (desired - velocity.0).clamp(-VEHICLE_MAX_FORCE, VEHICLE_MAX_FORCE)
+                * VEHICLE_COHESION_FACTOR,
+            mass,
+        );
+    }
+}
+
 fn calc_movement(
     mut vehicle_query: Query<
         (
-            &mut Velocity,
+            &Velocity,
             &Transform,
             &mut Acceleration,
             &Mass,
@@ -113,6 +230,7 @@ fn calc_movement(
         ),
         With<Vehicle>,
     >,
+    other_vehicle_query: Query<(&Transform, &Velocity), With<Vehicle>>,
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     windows: Res<Windows>,
     buttons: Res<Input<MouseButton>>,
@@ -132,21 +250,21 @@ fn calc_movement(
         // Folow mouse position
         if buttons.pressed(MouseButton::Left) {
             vehicle_query.for_each_mut(|(velocity, transform, mut acceleration, mass, _)| {
-                let mut desired = world_pos - transform.translation.truncate();
-
-                let dist = desired.length();
-
-                desired = desired.normalize_or_zero();
-
-                if dist < TARGET_RADIUS {
-                    desired *= dist / TARGET_RADIUS * VEHICLE_MAX_SPEED;
-                } else {
-                    desired *= VEHICLE_MAX_SPEED;
-                }
+                let mut desired = Vec2::ZERO;
+                seek_steer(&world_pos, &transform, &mut desired);
 
                 acceleration.apply_force(
-                    (desired - velocity.0).clamp(-VEHICLE_MAX_FORCE, VEHICLE_MAX_FORCE),
+                    (desired - velocity.0).clamp(-VEHICLE_MAX_FORCE, VEHICLE_MAX_FORCE)
+                        * VEHICLE_TARGET_FACTOR,
                     mass,
+                );
+
+                flock(
+                    &mut acceleration,
+                    &transform,
+                    &velocity,
+                    mass,
+                    &other_vehicle_query,
                 );
             });
 
@@ -154,66 +272,78 @@ fn calc_movement(
         }
     }
 
-    // let bounds = window_size / 2.0 - WALL_MARGIN;
+    let bounds = window_size / 2.0 - WALL_MARGIN;
 
-    // // Wander
-    // if wander {
-    //     let mut rng = rand::thread_rng();
-    //     let range = PI / 8.0;
+    // Wander
+    if wander {
+        let mut rng = rand::thread_rng();
+        let range = PI / 8.0;
 
-    //     vehicle_query.for_each_mut(
-    //         |(velocity, transform, mut acceleration, mass, mut wander_theta)| {
-    //             let fx = transform.translation.x < -bounds.x || transform.translation.x > bounds.x;
-    //             let fy = transform.translation.y < -bounds.y || transform.translation.y > bounds.y;
+        vehicle_query.for_each_mut(
+            |(velocity, transform, mut acceleration, mass, mut wander_theta)| {
+                let fx = transform.translation.x < -bounds.x || transform.translation.x > bounds.x;
+                let fy = transform.translation.y < -bounds.y || transform.translation.y > bounds.y;
 
-    //             if !fx && !fy {
-    //                 let center = transform.translation.truncate()
-    //                     + velocity.0.normalize_or_zero() * VEHICLE_PREDICT_DISTANCE;
+                flock(
+                    &mut acceleration,
+                    &transform,
+                    &velocity,
+                    mass,
+                    &other_vehicle_query,
+                );
 
-    //                 wander_theta.0 += rng.gen_range(-range..=range);
+                if !fx && !fy {
+                    let center = transform.translation.truncate()
+                        + velocity.0.normalize_or_zero() * VEHICLE_PREDICT_DISTANCE;
 
-    //                 let f = wander_theta.0.sin_cos();
+                    wander_theta.0 += rng.gen_range(-range..=range);
 
-    //                 let target = center + Vec2::new(f.1, f.0) * VEHICLE_PREDICT_RADIUS;
+                    let f = wander_theta.0.sin_cos();
 
-    //                 let desired = (target - transform.translation.truncate()).normalize_or_zero()
-    //                     * VEHICLE_WANDER_SPEED;
+                    let target = center + Vec2::new(f.1, f.0) * VEHICLE_PREDICT_RADIUS;
 
-    //                 acceleration.apply_force(desired - velocity.0, mass);
-    //                 // return;
-    //             }
+                    let desired = (target - transform.translation.truncate()).normalize_or_zero()
+                        * VEHICLE_WANDER_SPEED;
 
-    //             let desired = Vec2::new(
-    //                 if fx {
-    //                     if transform.translation.x < WALL_MARGIN {
-    //                         VEHICLE_MAX_SPEED
-    //                     } else {
-    //                         -VEHICLE_MAX_SPEED
-    //                     }
-    //                 } else {
-    //                     velocity.x
-    //                 },
-    //                 if fy {
-    //                     if transform.translation.y < WALL_MARGIN {
-    //                         VEHICLE_MAX_SPEED
-    //                     } else {
-    //                         -VEHICLE_MAX_SPEED
-    //                     }
-    //                 } else {
-    //                     velocity.y
-    //                 },
-    //             );
+                    acceleration.apply_force(
+                        (desired - velocity.0).clamp(-VEHICLE_MAX_FORCE, VEHICLE_MAX_FORCE)
+                            * VEHICLE_WANDER_FACTOR,
+                        mass,
+                    );
+                    return;
+                }
 
-    //             acceleration.apply_force(
-    //                 (desired - velocity.0).clamp(-VEHICLE_MAX_FORCE, VEHICLE_MAX_FORCE),
-    //                 mass,
-    //             );
-    //         },
-    //     );
-    // }
+                let desired = Vec2::new(
+                    if fx {
+                        if transform.translation.x < WALL_MARGIN {
+                            VEHICLE_MAX_SPEED
+                        } else {
+                            -VEHICLE_MAX_SPEED
+                        }
+                    } else {
+                        velocity.x
+                    },
+                    if fy {
+                        if transform.translation.y < WALL_MARGIN {
+                            VEHICLE_MAX_SPEED
+                        } else {
+                            -VEHICLE_MAX_SPEED
+                        }
+                    } else {
+                        velocity.y
+                    },
+                );
+
+                acceleration.apply_force(
+                    (desired - velocity.0).clamp(-VEHICLE_MAX_FORCE, VEHICLE_MAX_FORCE)
+                        * VEHICLE_LIMIT_FACTOR,
+                    mass,
+                );
+            },
+        );
+    }
 
     // Limit bounds
-    // vehicle_query.for_each_mut(|(velocity, transform, mut acceleration, mass, _)| {});
 }
 
 fn update(
