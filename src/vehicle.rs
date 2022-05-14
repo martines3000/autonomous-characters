@@ -1,14 +1,17 @@
-use std::f32::consts::PI;
+use std::{
+    f32::consts::PI,
+    sync::{Arc, Mutex},
+};
 
-use bevy::{math::const_vec2, prelude::*};
+use bevy::{math::const_vec2, prelude::*, tasks::TaskPool};
 use bevy_prototype_lyon::prelude::*;
 
 use rand::prelude::*;
 
 use crate::{world::WALL_MARGIN, MainCamera};
 
-const VEHICLE_COUNT: usize = 500;
-const VEHICLE_SIZE: f32 = 10.0;
+const VEHICLE_COUNT: usize = 2000;
+const VEHICLE_SIZE: f32 = 5.0;
 const VEHICLE_MAX_SPEED: f32 = 300.0;
 const VEHICLE_MAX_SPEED_VEC: Vec2 = const_vec2!([VEHICLE_MAX_SPEED; 2]);
 const VEHICLE_MAX_FORCE: Vec2 = const_vec2!([80.0; 2]);
@@ -136,20 +139,23 @@ fn flock(
     velocity: &Velocity,
     mass: &Mass,
     other_vehicle_query: &Query<(&Transform, &Velocity), With<Vehicle>>,
+    task_pool: &Res<TaskPool>,
 ) {
     // Seperate
-    let mut seperate_sum = Vec2::new(0.0, 0.0);
-    let mut seperate_count = 0;
+    let seperate_sum = Arc::new(Mutex::new(Vec2::new(0.0, 0.0)));
+    let seperate_count = Arc::new(Mutex::new(0));
 
     // Align
-    let mut align_sum = Vec2::new(0.0, 0.0);
-    let mut align_count = 0;
+    let align_sum = Arc::new(Mutex::new(Vec2::new(0.0, 0.0)));
+    let align_count = Arc::new(Mutex::new(0));
 
     // Cohesion
-    let mut cohesion_sum = Vec2::new(0.0, 0.0);
-    let mut cohesion_count = 0;
+    let cohesion_sum = Arc::new(Mutex::new(Vec2::new(0.0, 0.0)));
+    let cohesion_count = Arc::new(Mutex::new(0));
 
-    other_vehicle_query.for_each(|(other_transform, other_velocity)| {
+    // println!("{}", task_pool.thread_num());
+
+    other_vehicle_query.par_for_each(&task_pool, 500, |(other_transform, other_velocity)| {
         let dist = transform
             .translation
             .truncate()
@@ -158,58 +164,75 @@ fn flock(
         // Seperate
         if dist > 0.0 {
             if dist <= VEHICLE_SEPERATION_DIST_SQ {
-                seperate_sum += (transform.translation.truncate()
+                let mut seperate_sum_lock = seperate_sum.lock().unwrap();
+                *seperate_sum_lock += (transform.translation.truncate()
                     - other_transform.translation.truncate())
                 .normalize_or_zero()
                     / dist.sqrt();
 
-                seperate_count += 1;
+                let mut seperate_count_lock = seperate_count.lock().unwrap();
+                *seperate_count_lock += 1;
             }
 
             // Align
             if dist <= VEHICLE_ALIGN_DIST_SQ {
-                align_sum += other_velocity.0;
-                align_count += 1;
+                let mut align_sum_lock = align_sum.lock().unwrap();
+                *align_sum_lock += other_velocity.0;
+
+                let mut align_count_lock = align_count.lock().unwrap();
+                *align_count_lock += 1;
             }
 
             // Cohesion
             if dist <= VEHICLE_COHESION_DIST_SQ {
-                cohesion_sum += other_transform.translation.truncate();
-                cohesion_count += 1;
+                let mut cohesion_sum_lock = cohesion_sum.lock().unwrap();
+                *cohesion_sum_lock += other_transform.translation.truncate();
+
+                let mut cohesion_count_lock = cohesion_count.lock().unwrap();
+                *cohesion_count_lock += 1;
             }
         }
     });
 
     // Seperate
-    if seperate_count > 0 {
-        seperate_sum /= seperate_count as f32;
-        seperate_sum = seperate_sum.normalize_or_zero() * VEHICLE_MAX_SPEED;
+    let seperate_count_lock = seperate_count.lock().unwrap();
+    let mut seperate_sum_lock = seperate_sum.lock().unwrap();
+
+    if *seperate_count_lock > 0 {
+        *seperate_sum_lock /= *seperate_count_lock as f32;
+        *seperate_sum_lock = seperate_sum_lock.normalize_or_zero() * VEHICLE_MAX_SPEED;
 
         acceleration.apply_force(
-            (seperate_sum - velocity.0).clamp(-VEHICLE_MAX_FORCE, VEHICLE_MAX_FORCE)
+            (*seperate_sum_lock - velocity.0).clamp(-VEHICLE_MAX_FORCE, VEHICLE_MAX_FORCE)
                 * VEHICLE_SEPERATION_FACTOR,
             mass,
         );
     }
 
     // Align
-    if align_count > 0 {
-        align_sum /= align_count as f32;
-        align_sum = align_sum.normalize_or_zero() * VEHICLE_MAX_SPEED;
+    let align_count_lock = align_count.lock().unwrap();
+    let mut align_sum_lock = align_sum.lock().unwrap();
+
+    if *align_count_lock > 0 {
+        *align_sum_lock /= *align_count_lock as f32;
+        *align_sum_lock = align_sum_lock.normalize_or_zero() * VEHICLE_MAX_SPEED;
 
         acceleration.apply_force(
-            (align_sum - velocity.0).clamp(-VEHICLE_MAX_FORCE, VEHICLE_MAX_FORCE)
+            (*align_sum_lock - velocity.0).clamp(-VEHICLE_MAX_FORCE, VEHICLE_MAX_FORCE)
                 * VEHICLE_ALIGN_FACTOR,
             mass,
         );
     }
 
     // Cohesion
-    if cohesion_count > 0 {
-        let mut desired = Vec2::ZERO;
-        cohesion_sum /= cohesion_count as f32;
+    let cohesion_count_lock = cohesion_count.lock().unwrap();
+    let mut cohesion_sum_lock = cohesion_sum.lock().unwrap();
 
-        seek_steer(&cohesion_sum, &transform, &mut desired);
+    if *cohesion_count_lock > 0 {
+        let mut desired = Vec2::ZERO;
+        *cohesion_sum_lock /= *cohesion_count_lock as f32;
+
+        seek_steer(&cohesion_sum_lock, &transform, &mut desired);
 
         acceleration.apply_force(
             (desired - velocity.0).clamp(-VEHICLE_MAX_FORCE, VEHICLE_MAX_FORCE)
@@ -234,6 +257,7 @@ fn calc_movement(
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     windows: Res<Windows>,
     buttons: Res<Input<MouseButton>>,
+    task_pool: Res<TaskPool>,
 ) {
     let window = windows.get_primary().unwrap();
     let (camera, camera_transform) = camera_query.single();
@@ -265,6 +289,7 @@ fn calc_movement(
                     &velocity,
                     mass,
                     &other_vehicle_query,
+                    &task_pool,
                 );
             });
 
@@ -276,10 +301,11 @@ fn calc_movement(
 
     // Wander
     if wander {
-        let mut rng = rand::thread_rng();
         let range = PI / 8.0;
 
-        vehicle_query.for_each_mut(
+        vehicle_query.par_for_each_mut(
+            &task_pool,
+            500,
             |(velocity, transform, mut acceleration, mass, mut wander_theta)| {
                 let fx = transform.translation.x < -bounds.x || transform.translation.x > bounds.x;
                 let fy = transform.translation.y < -bounds.y || transform.translation.y > bounds.y;
@@ -290,14 +316,15 @@ fn calc_movement(
                     &velocity,
                     mass,
                     &other_vehicle_query,
+                    &task_pool,
                 );
 
                 if !fx && !fy {
                     let center = transform.translation.truncate()
                         + velocity.0.normalize_or_zero() * VEHICLE_PREDICT_DISTANCE;
 
-                    wander_theta.0 += rng.gen_range(-range..=range);
-
+                    let val = fastrand::f32() * range;
+                    wander_theta.0 += if fastrand::bool() { val } else { -val };
                     let f = wander_theta.0.sin_cos();
 
                     let target = center + Vec2::new(f.1, f.0) * VEHICLE_PREDICT_RADIUS;
@@ -349,16 +376,21 @@ fn calc_movement(
 fn update(
     mut vehicle_query: Query<(&mut Velocity, &mut Acceleration, &mut Transform), With<Vehicle>>,
     time: Res<Time>,
+    task_pool: Res<TaskPool>,
 ) {
-    vehicle_query.for_each_mut(|(mut velocity, mut acceleration, mut transform)| {
-        velocity.0 =
-            (velocity.0 + acceleration.0).clamp(-VEHICLE_MAX_SPEED_VEC, VEHICLE_MAX_SPEED_VEC);
+    vehicle_query.par_for_each_mut(
+        &task_pool,
+        500,
+        |(mut velocity, mut acceleration, mut transform)| {
+            velocity.0 =
+                (velocity.0 + acceleration.0).clamp(-VEHICLE_MAX_SPEED_VEC, VEHICLE_MAX_SPEED_VEC);
 
-        transform.translation.x += velocity.x * time.delta_seconds();
-        transform.translation.y += velocity.y * time.delta_seconds();
+            transform.translation.x += velocity.x * time.delta_seconds();
+            transform.translation.y += velocity.y * time.delta_seconds();
 
-        transform.rotation = Quat::from_rotation_z(velocity.y.atan2(velocity.x) - PI / 2.0);
+            transform.rotation = Quat::from_rotation_z(velocity.y.atan2(velocity.x) - PI / 2.0);
 
-        acceleration.0 *= 0.0;
-    });
+            acceleration.0 *= 0.0;
+        },
+    );
 }

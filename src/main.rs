@@ -4,7 +4,7 @@ mod target;
 mod vehicle;
 mod world;
 
-use bevy::{prelude::*, render::camera::ScalingMode};
+use bevy::{prelude::*, render::camera::ScalingMode, tasks::TaskPool};
 use bevy_prototype_lyon::prelude::*;
 use debug::DebugPlugin;
 use target::TargetPlugin;
@@ -25,6 +25,7 @@ fn main() {
             title: "Autonomous-characters".to_string(),
             ..Default::default()
         })
+        .insert_resource(TaskPool::new())
         .add_startup_system(spawn_camera)
         .add_startup_system(hide_cursor)
         .add_plugins(DefaultPlugins)
