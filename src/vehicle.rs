@@ -7,34 +7,38 @@ use rand::prelude::*;
 
 use crate::{world::WALL_MARGIN, MainCamera};
 
-const VEHICLE_COUNT: usize = 3200;
+const VEHICLE_COUNT: usize = 600;
 
 const VEHICLE_SIZE: f32 = 2.0;
 const VEHICLE_MAX_SPEED: f32 = 300.0;
 const VEHICLE_MAX_SPEED_VEC: Vec2 = const_vec2!([VEHICLE_MAX_SPEED; 2]);
-const VEHICLE_MAX_FORCE: Vec2 = const_vec2!([80.0; 2]);
+const VEHICLE_MAX_FORCE: Vec2 = const_vec2!([120.0; 2]);
 const VEHICLE_MASS: f32 = 10.0;
 const VEHICLE_BODY_COLOR: Color = Color::WHITE;
 const VEHICLE_EDGE_COLOR: Color = Color::PINK;
 const VEHICLE_WANDER_SPEED: f32 = 150.0;
 const VEHICLE_PREDICT_DISTANCE: f32 = 300.0;
 const VEHICLE_PREDICT_RADIUS: f32 = 100.0;
+const VEHICLE_VIEW_ANGLE: f32 = PI / 8.0;
 
 // Distances
-const VEHICLE_SEPERATION_DIST: f32 = VEHICLE_SIZE * 2.0 * 5.0;
-const VEHICLE_ALIGN_DIST: f32 = VEHICLE_SIZE * 6.0 * 4.0;
-const VEHICLE_COHESION_DIST: f32 = VEHICLE_SIZE * 6.0 * 4.0;
+const VEHICLE_SEPERATION_DIST: f32 = VEHICLE_SIZE * 6.0;
+const VEHICLE_ALIGN_DIST: f32 = VEHICLE_SIZE * 15.0;
+const VEHICLE_COHESION_DIST: f32 = VEHICLE_SIZE * 12.0;
+const VEHICLE_VIEW_DIST: f32 = VEHICLE_SIZE * 8.0;
 const VEHICLE_SEPERATION_DIST_SQ: f32 = VEHICLE_SEPERATION_DIST * VEHICLE_SEPERATION_DIST;
 const VEHICLE_ALIGN_DIST_SQ: f32 = VEHICLE_ALIGN_DIST * VEHICLE_ALIGN_DIST;
 const VEHICLE_COHESION_DIST_SQ: f32 = VEHICLE_COHESION_DIST * VEHICLE_COHESION_DIST;
+const VEHICLE_VIEW_DIST_SQ: f32 = VEHICLE_VIEW_DIST * VEHICLE_VIEW_DIST;
 
 // Force factors
-const VEHICLE_SEPERATION_FACTOR: f32 = 1.8;
-const VEHICLE_ALIGN_FACTOR: f32 = 1.2;
-const VEHICLE_COHESION_FACTOR: f32 = 0.6;
+const VEHICLE_SEPERATION_FACTOR: f32 = 2.0;
+const VEHICLE_ALIGN_FACTOR: f32 = 1.0;
+const VEHICLE_COHESION_FACTOR: f32 = 1.2;
 const VEHICLE_LIMIT_FACTOR: f32 = 1.6;
-const VEHICLE_TARGET_FACTOR: f32 = 1.4;
-const VEHICLE_WANDER_FACTOR: f32 = 1.0;
+const VEHICLE_TARGET_FACTOR: f32 = 0.8;
+const VEHICLE_WANDER_FACTOR: f32 = 0.6;
+const VEHICLE_VIEW_FACTOR: f32 = 1.4;
 
 const LINE_WIDTH: f32 = 2.0;
 pub const TARGET_RADIUS: f32 = 100.0;
@@ -150,6 +154,10 @@ fn flock(
     let mut cohesion_sum = Vec2::new(0.0, 0.0);
     let mut cohesion_count = 0;
 
+    // View
+    let mut view_sum = Vec2::new(0.0, 0.0);
+    let mut view_count = 0;
+
     other_vehicle_query.for_each(|(other_transform, other_velocity)| {
         let dist = transform
             .translation
@@ -177,6 +185,29 @@ fn flock(
             if dist <= VEHICLE_COHESION_DIST_SQ {
                 cohesion_sum += other_transform.translation.truncate();
                 cohesion_count += 1;
+            }
+
+            // View
+            if dist <= VEHICLE_VIEW_DIST_SQ && view_count == 0 {
+                let path =
+                    other_transform.translation.truncate() - transform.translation.truncate();
+
+                let angle = velocity.0.angle_between(path);
+
+                if angle.abs() < VEHICLE_VIEW_ANGLE {
+                    let val = path.perp();
+
+                    let angle_1 = velocity.0.angle_between(val);
+                    let angle_2 = velocity.0.angle_between(-val);
+
+                    if angle_1.abs() < angle_2.abs() {
+                        view_sum += val.normalize_or_zero();
+                    } else {
+                        view_sum -= val.normalize_or_zero();
+                    }
+
+                    view_count += 1;
+                }
             }
         }
     });
@@ -215,6 +246,18 @@ fn flock(
         acceleration.apply_force(
             (desired - velocity.0).clamp(-VEHICLE_MAX_FORCE, VEHICLE_MAX_FORCE)
                 * VEHICLE_COHESION_FACTOR,
+            mass,
+        );
+    }
+
+    // View
+    if view_count > 0 {
+        view_sum /= view_count as f32;
+        view_sum = view_sum.normalize_or_zero() * VEHICLE_MAX_SPEED;
+
+        acceleration.apply_force(
+            (view_sum - velocity.0).clamp(-VEHICLE_MAX_FORCE, VEHICLE_MAX_FORCE)
+                * VEHICLE_VIEW_FACTOR,
             mass,
         );
     }
@@ -343,8 +386,6 @@ fn calc_movement(
             },
         );
     }
-
-    // Limit bounds
 }
 
 fn update(
