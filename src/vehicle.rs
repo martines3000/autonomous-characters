@@ -10,22 +10,24 @@ use rand::prelude::*;
 
 use crate::{world::WALL_MARGIN, MainCamera};
 
-const VEHICLE_COUNT: usize = 100;
-const VEHICLE_SIZE: f32 = 10.0;
+const VEHICLE_COUNT: usize = 1600;
+const BATCH_SIZE: usize = 200; // We have 8 threads
+
+const VEHICLE_SIZE: f32 = 2.0;
 const VEHICLE_MAX_SPEED: f32 = 300.0;
 const VEHICLE_MAX_SPEED_VEC: Vec2 = const_vec2!([VEHICLE_MAX_SPEED; 2]);
 const VEHICLE_MAX_FORCE: Vec2 = const_vec2!([80.0; 2]);
 const VEHICLE_MASS: f32 = 10.0;
 const VEHICLE_BODY_COLOR: Color = Color::WHITE;
-const VEHICLE_EDGE_COLOR: Color = Color::BLUE;
+const VEHICLE_EDGE_COLOR: Color = Color::PINK;
 const VEHICLE_WANDER_SPEED: f32 = 150.0;
 const VEHICLE_PREDICT_DISTANCE: f32 = 300.0;
 const VEHICLE_PREDICT_RADIUS: f32 = 100.0;
 
 // Distances
-const VEHICLE_SEPERATION_DIST: f32 = VEHICLE_SIZE * 2.0;
-const VEHICLE_ALIGN_DIST: f32 = VEHICLE_SIZE * 6.0;
-const VEHICLE_COHESION_DIST: f32 = VEHICLE_SIZE * 6.0;
+const VEHICLE_SEPERATION_DIST: f32 = VEHICLE_SIZE * 2.0 * 5.0;
+const VEHICLE_ALIGN_DIST: f32 = VEHICLE_SIZE * 6.0 * 4.0;
+const VEHICLE_COHESION_DIST: f32 = VEHICLE_SIZE * 6.0 * 4.0;
 const VEHICLE_SEPERATION_DIST_SQ: f32 = VEHICLE_SEPERATION_DIST * VEHICLE_SEPERATION_DIST;
 const VEHICLE_ALIGN_DIST_SQ: f32 = VEHICLE_ALIGN_DIST * VEHICLE_ALIGN_DIST;
 const VEHICLE_COHESION_DIST_SQ: f32 = VEHICLE_COHESION_DIST * VEHICLE_COHESION_DIST;
@@ -153,46 +155,48 @@ fn flock(
     let cohesion_sum = Arc::new(Mutex::new(Vec2::new(0.0, 0.0)));
     let cohesion_count = Arc::new(Mutex::new(0));
 
-    // println!("{}", task_pool.thread_num());
+    other_vehicle_query.par_for_each(
+        &task_pool,
+        BATCH_SIZE,
+        |(other_transform, other_velocity)| {
+            let dist = transform
+                .translation
+                .truncate()
+                .distance_squared(other_transform.translation.truncate());
 
-    other_vehicle_query.par_for_each(&task_pool, 500, |(other_transform, other_velocity)| {
-        let dist = transform
-            .translation
-            .truncate()
-            .distance_squared(other_transform.translation.truncate());
+            // Seperate
+            if dist > 0.0 {
+                if dist <= VEHICLE_SEPERATION_DIST_SQ {
+                    let mut seperate_sum_lock = seperate_sum.lock().unwrap();
+                    *seperate_sum_lock += (transform.translation.truncate()
+                        - other_transform.translation.truncate())
+                    .normalize_or_zero()
+                        / dist.sqrt();
 
-        // Seperate
-        if dist > 0.0 {
-            if dist <= VEHICLE_SEPERATION_DIST_SQ {
-                let mut seperate_sum_lock = seperate_sum.lock().unwrap();
-                *seperate_sum_lock += (transform.translation.truncate()
-                    - other_transform.translation.truncate())
-                .normalize_or_zero()
-                    / dist.sqrt();
+                    let mut seperate_count_lock = seperate_count.lock().unwrap();
+                    *seperate_count_lock += 1;
+                }
 
-                let mut seperate_count_lock = seperate_count.lock().unwrap();
-                *seperate_count_lock += 1;
+                // Align
+                if dist <= VEHICLE_ALIGN_DIST_SQ {
+                    let mut align_sum_lock = align_sum.lock().unwrap();
+                    *align_sum_lock += other_velocity.0;
+
+                    let mut align_count_lock = align_count.lock().unwrap();
+                    *align_count_lock += 1;
+                }
+
+                // Cohesion
+                if dist <= VEHICLE_COHESION_DIST_SQ {
+                    let mut cohesion_sum_lock = cohesion_sum.lock().unwrap();
+                    *cohesion_sum_lock += other_transform.translation.truncate();
+
+                    let mut cohesion_count_lock = cohesion_count.lock().unwrap();
+                    *cohesion_count_lock += 1;
+                }
             }
-
-            // Align
-            if dist <= VEHICLE_ALIGN_DIST_SQ {
-                let mut align_sum_lock = align_sum.lock().unwrap();
-                *align_sum_lock += other_velocity.0;
-
-                let mut align_count_lock = align_count.lock().unwrap();
-                *align_count_lock += 1;
-            }
-
-            // Cohesion
-            if dist <= VEHICLE_COHESION_DIST_SQ {
-                let mut cohesion_sum_lock = cohesion_sum.lock().unwrap();
-                *cohesion_sum_lock += other_transform.translation.truncate();
-
-                let mut cohesion_count_lock = cohesion_count.lock().unwrap();
-                *cohesion_count_lock += 1;
-            }
-        }
-    });
+        },
+    );
 
     // Seperate
     let seperate_count_lock = seperate_count.lock().unwrap();
@@ -275,7 +279,7 @@ fn calc_movement(
         if buttons.pressed(MouseButton::Left) {
             vehicle_query.par_for_each_mut(
                 &task_pool,
-                500,
+                BATCH_SIZE,
                 |(velocity, transform, mut acceleration, mass, _)| {
                     let mut desired = Vec2::ZERO;
                     seek_steer(&world_pos, &transform, &mut desired);
@@ -309,7 +313,7 @@ fn calc_movement(
 
         vehicle_query.par_for_each_mut(
             &task_pool,
-            500,
+            BATCH_SIZE,
             |(velocity, transform, mut acceleration, mass, mut wander_theta)| {
                 let fx = transform.translation.x < -bounds.x || transform.translation.x > bounds.x;
                 let fy = transform.translation.y < -bounds.y || transform.translation.y > bounds.y;
@@ -384,7 +388,7 @@ fn update(
 ) {
     vehicle_query.par_for_each_mut(
         &task_pool,
-        500,
+        BATCH_SIZE,
         |(mut velocity, mut acceleration, mut transform)| {
             velocity.0 =
                 (velocity.0 + acceleration.0).clamp(-VEHICLE_MAX_SPEED_VEC, VEHICLE_MAX_SPEED_VEC);

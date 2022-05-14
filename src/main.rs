@@ -4,6 +4,7 @@ mod target;
 mod vehicle;
 mod world;
 
+use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::{prelude::*, render::camera::ScalingMode, tasks::TaskPool};
 use bevy_prototype_lyon::prelude::*;
 use debug::DebugPlugin;
@@ -11,7 +12,7 @@ use target::TargetPlugin;
 use vehicle::VehiclePlugin;
 use world::WorldPlugin;
 
-pub const CLEAR: Color = Color::rgb(0.2, 0.2, 0.2);
+pub const CLEAR: Color = Color::rgb(0.3, 0.3, 0.3);
 pub const RESOLUTION: f32 = 16.0 / 9.0;
 
 fn main() {
@@ -29,6 +30,8 @@ fn main() {
         .add_startup_system(spawn_camera)
         .add_startup_system(hide_cursor)
         .add_plugins(DefaultPlugins)
+        // .add_plugin(LogDiagnosticsPlugin::default())
+        // .add_plugin(FrameTimeDiagnosticsPlugin::default())
         // .add_plugin(DebugPlugin)
         .add_plugin(WorldPlugin)
         .add_plugin(ShapePlugin)

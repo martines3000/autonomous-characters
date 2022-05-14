@@ -25,7 +25,7 @@ fn crate_target(mut commands: Commands) {
             &shape,
             DrawMode::Outlined {
                 fill_mode: FillMode::color(Color::NONE),
-                outline_mode: StrokeMode::new(Color::RED, 10.0),
+                outline_mode: StrokeMode::new(Color::BLACK, 10.0),
             },
             Transform {
                 translation: Vec3::new(0.0, 0.0, 10.0),
@@ -42,8 +42,9 @@ fn update(
     time: Res<Time>,
 ) {
     let (mut transform, mut draw_mode) = target_query.single_mut();
-    let hue = (time.seconds_since_startup() * 50.0) % 360.0;
-    let outline_width = 2.0 + time.seconds_since_startup().sin().abs() * 10.0;
+    // let hue = (time.seconds_since_startup() * 50.0) % 360.0;
+    // let outline_width = 2.0 + time.seconds_since_startup().sin().abs() * 10.0;
+    let outline_width = 3.0;
 
     let window = windows.get_primary().unwrap();
     let (camera, camera_transform) = camera_query.single();
@@ -65,7 +66,7 @@ fn update(
         ref mut outline_mode,
     } = *draw_mode
     {
-        fill_mode.color = Color::hsl(hue as f32, 1.0, 0.5);
+        fill_mode.color = Color::WHITE;
         outline_mode.options.line_width = outline_width as f32;
     }
 }
