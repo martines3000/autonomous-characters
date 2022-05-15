@@ -10,7 +10,7 @@ FROM node:16-alpine
 
 RUN npm install -g serve
 
-COPY --from=builder /ac/out/ ./
+COPY --from=builder /ac/out/ ./out/
 COPY --from=builder /ac/index.html .
 
 CMD ["npx", "serve", "."]  
