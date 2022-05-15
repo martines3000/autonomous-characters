@@ -7,7 +7,7 @@ use rand::prelude::*;
 
 use crate::{world::WALL_MARGIN, MainCamera, target::TARGET_RADIUS};
 
-const VEHICLE_COUNT: usize = 2;
+const VEHICLE_COUNT: usize = 100;
 
 const VEHICLE_SIZE: f32 = 4.0;
 const VEHICLE_MAX_SPEED: f32 = 300.0;
