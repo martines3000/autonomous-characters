@@ -5,6 +5,7 @@ mod vehicle;
 mod world;
 
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
+use bevy::tasks::TaskPool;
 use bevy::{prelude::*, render::camera::ScalingMode};
 use bevy_prototype_lyon::prelude::*;
 use debug::DebugPlugin;
@@ -26,12 +27,12 @@ fn main() {
             title: "Autonomous-characters".to_string(),
             ..Default::default()
         })
-        .insert_resource(Vec::<Vec<&Transform>>::with_capacity(1000))
+        .insert_resource(TaskPool::new())
         .add_startup_system(spawn_camera)
         .add_startup_system(hide_cursor)
         .add_plugins(DefaultPlugins)
-        // .add_plugin(LogDiagnosticsPlugin::default())
-        // .add_plugin(FrameTimeDiagnosticsPlugin::default())
+        .add_plugin(LogDiagnosticsPlugin::default())
+        .add_plugin(FrameTimeDiagnosticsPlugin::default())
         // .add_plugin(DebugPlugin)
         .add_plugin(WorldPlugin)
         .add_plugin(ShapePlugin)

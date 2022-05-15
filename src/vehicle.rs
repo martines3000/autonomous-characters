@@ -1,13 +1,13 @@
 use std::{f32::consts::PI};
 
-use bevy::{math::const_vec2, prelude::*};
+use bevy::{math::const_vec2, prelude::*, tasks::TaskPool};
 use bevy_prototype_lyon::prelude::*;
 
 use rand::prelude::*;
 
 use crate::{world::WALL_MARGIN, MainCamera, target::TARGET_RADIUS};
 
-const VEHICLE_COUNT: usize = 200;
+const VEHICLE_COUNT: usize = 4000;
 
 const VEHICLE_SIZE: f32 = 2.0;
 const VEHICLE_MAX_SPEED: f32 = 300.0;
@@ -171,10 +171,7 @@ fn vehicle_spawner(mut commands: Commands, windows: Res<Windows>, kbd: Res<Input
                 .insert(Mass(VEHICLE_MASS))
                 .insert(WanderTheta(0.0));
         }
-    }
-
-
-   
+    }  
 }
 
 fn seek_steer(world_pos: &Vec2, transform: &Transform, desired: &mut Vec2) {
@@ -334,6 +331,7 @@ fn calc_movement(
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     windows: Res<Windows>,
     buttons: Res<Input<MouseButton>>,
+    task_pool: Res<TaskPool>
 ) {
     let window = windows.get_primary().unwrap();
     let (camera, camera_transform) = camera_query.single();
@@ -349,7 +347,7 @@ fn calc_movement(
 
         // Folow mouse position
         if buttons.pressed(MouseButton::Left) {
-            vehicle_query.for_each_mut(|(velocity, transform, mut acceleration, mass, _)| {
+            vehicle_query.par_for_each_mut(&task_pool, 500, |(velocity, transform, mut acceleration, mass, _)| {
                 let mut desired = Vec2::ZERO;
                 seek_steer(&world_pos, &transform, &mut desired);
 
@@ -376,10 +374,9 @@ fn calc_movement(
 
     // Wander
     if wander {
-        let mut rng = rand::thread_rng();
         let range = PI / 8.0;
 
-        vehicle_query.for_each_mut(
+        vehicle_query.par_for_each_mut(&task_pool, 500,
             |(velocity, transform, mut acceleration, mass, mut wander_theta)| {
                 let fx = transform.translation.x < -bounds.x || transform.translation.x > bounds.x;
                 let fy = transform.translation.y < -bounds.y || transform.translation.y > bounds.y;
@@ -396,7 +393,8 @@ fn calc_movement(
                     let center = transform.translation.truncate()
                         + velocity.0.normalize_or_zero() * VEHICLE_PREDICT_DISTANCE;
 
-                    wander_theta.0 += rng.gen_range(-range..=range);
+                    let val = fastrand::f32() * range;
+                    wander_theta.0 += if fastrand::bool() { val } else { -val };
 
                     let f = wander_theta.0.sin_cos();
 
@@ -447,8 +445,9 @@ fn calc_movement(
 fn update(
     mut vehicle_query: Query<(&mut Velocity, &mut Acceleration, &mut Transform), With<Vehicle>>,
     time: Res<Time>,
+    task_pool: Res<TaskPool>,
 ) {
-    vehicle_query.for_each_mut(|(mut velocity, mut acceleration, mut transform)| {
+    vehicle_query.par_for_each_mut(&task_pool, 500, |(mut velocity, mut acceleration, mut transform)| {
         velocity.0 =
             (velocity.0 + acceleration.0).clamp(-VEHICLE_MAX_SPEED_VEC, VEHICLE_MAX_SPEED_VEC);
 
