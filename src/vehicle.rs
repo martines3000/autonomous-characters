@@ -1,13 +1,13 @@
-use std::f32::consts::PI;
+use std::{f32::consts::PI};
 
 use bevy::{math::const_vec2, prelude::*};
 use bevy_prototype_lyon::prelude::*;
 
 use rand::prelude::*;
 
-use crate::{world::WALL_MARGIN, MainCamera};
+use crate::{world::WALL_MARGIN, MainCamera, target::TARGET_RADIUS};
 
-const VEHICLE_COUNT: usize = 600;
+const VEHICLE_COUNT: usize = 200;
 
 const VEHICLE_SIZE: f32 = 2.0;
 const VEHICLE_MAX_SPEED: f32 = 300.0;
@@ -17,9 +17,12 @@ const VEHICLE_MASS: f32 = 10.0;
 const VEHICLE_BODY_COLOR: Color = Color::WHITE;
 const VEHICLE_EDGE_COLOR: Color = Color::PINK;
 const VEHICLE_WANDER_SPEED: f32 = 150.0;
-const VEHICLE_PREDICT_DISTANCE: f32 = 300.0;
-const VEHICLE_PREDICT_RADIUS: f32 = 100.0;
+const VEHICLE_PREDICT_DISTANCE: f32 = VEHICLE_SIZE * 16.0;
+const VEHICLE_PREDICT_RADIUS: f32 = VEHICLE_SIZE * 10.0;
 const VEHICLE_VIEW_ANGLE: f32 = PI / 8.0;
+
+const VEHICLE_SECONDARY_BODY_COLOR: Color = Color::WHITE;
+const VEHICLE_SECONDARY_EDGE_COLOR: Color = Color::ORANGE_RED;
 
 // Distances
 const VEHICLE_SEPERATION_DIST: f32 = VEHICLE_SIZE * 6.0;
@@ -36,12 +39,11 @@ const VEHICLE_SEPERATION_FACTOR: f32 = 2.0;
 const VEHICLE_ALIGN_FACTOR: f32 = 1.0;
 const VEHICLE_COHESION_FACTOR: f32 = 1.2;
 const VEHICLE_LIMIT_FACTOR: f32 = 1.6;
-const VEHICLE_TARGET_FACTOR: f32 = 0.8;
-const VEHICLE_WANDER_FACTOR: f32 = 0.6;
+const VEHICLE_TARGET_FACTOR: f32 = 0.7;
+const VEHICLE_WANDER_FACTOR: f32 = 0.8;
 const VEHICLE_VIEW_FACTOR: f32 = 1.4;
 
 const LINE_WIDTH: f32 = 2.0;
-pub const TARGET_RADIUS: f32 = 100.0;
 
 pub struct VehiclePlugin;
 
@@ -69,6 +71,7 @@ impl Acceleration {
 impl Plugin for VehiclePlugin {
     fn build(&self, app: &mut App) {
         app.add_startup_system(spawn_vehicles)
+            .add_system(vehicle_spawner)
             .add_system(calc_movement)
             .add_system(update);
     }
@@ -119,6 +122,59 @@ fn spawn_vehicles(mut commands: Commands, windows: Res<Windows>) {
             .insert(WanderTheta(0.0))
             .insert(Name::new(format!("{}_{}", "Vehicle", i)));
     }
+}
+
+fn vehicle_spawner(mut commands: Commands, windows: Res<Windows>, kbd: Res<Input<KeyCode>>,camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>){
+    let window = windows.get_primary().unwrap();
+    let window_size = Vec2::new(window.width() as f32, window.height() as f32);
+    let (camera, camera_transform) = camera_query.single();
+
+    if let Some(_position) = window.cursor_position(){
+        if kbd.pressed(KeyCode::Space){
+            let ndc = (_position / window_size) * 2.0 - Vec2::ONE;
+            let ndc_to_world = camera_transform.compute_matrix() * camera.projection_matrix.inverse();
+            let world_pos = ndc_to_world.project_point3(ndc.extend(-1.0));
+            let world_pos: Vec2 = world_pos.truncate();
+
+            let shape = shapes::RegularPolygon {
+                sides: 3,
+                feature: shapes::RegularPolygonFeature::Radius(VEHICLE_SIZE),
+                ..shapes::RegularPolygon::default()
+            };
+        
+            let line = shapes::Line {
+                0: shape.center,
+                1: shape.center + Vec2::new(0.0, VEHICLE_SIZE),
+            };
+        
+            let builder = GeometryBuilder::new().add(&shape).add(&line);
+        
+            commands
+                .spawn_bundle(builder.build(
+                    DrawMode::Outlined {
+                        fill_mode: {
+                            bevy_prototype_lyon::draw::FillMode {
+                                options: FillOptions::non_zero(),
+                                color: VEHICLE_SECONDARY_BODY_COLOR,
+                            }
+                        },
+                        outline_mode: StrokeMode::new(VEHICLE_SECONDARY_EDGE_COLOR, LINE_WIDTH),
+                    },
+                    Transform {
+                        translation: world_pos.extend(900.0),
+                        ..Default::default()
+                    },
+                ))
+                .insert(Vehicle)
+                .insert(Velocity(Vec2::ZERO))
+                .insert(Acceleration(Vec2::ZERO))
+                .insert(Mass(VEHICLE_MASS))
+                .insert(WanderTheta(0.0));
+        }
+    }
+
+
+   
 }
 
 fn seek_steer(world_pos: &Vec2, transform: &Transform, desired: &mut Vec2) {

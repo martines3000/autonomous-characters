@@ -1,7 +1,9 @@
 use bevy::prelude::*;
 use bevy_prototype_lyon::prelude::*;
 
-use crate::{vehicle::TARGET_RADIUS, MainCamera};
+use crate::MainCamera;
+
+pub const TARGET_RADIUS: f32 = 100.0;
 
 pub struct TargetPlugin;
 
