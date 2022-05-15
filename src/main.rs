@@ -32,7 +32,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         // .add_plugin(LogDiagnosticsPlugin::default())
         // .add_plugin(FrameTimeDiagnosticsPlugin::default())
-        // .add_plugin(DebugPlugin)
+        .add_plugin(DebugPlugin)
         .add_plugin(WorldPlugin)
         .add_plugin(ShapePlugin)
         .add_plugin(VehiclePlugin)
