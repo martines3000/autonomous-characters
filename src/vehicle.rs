@@ -7,41 +7,41 @@ use rand::prelude::*;
 
 use crate::{world::WALL_MARGIN, MainCamera, target::TARGET_RADIUS};
 
-const VEHICLE_COUNT: usize = 200;
+const VEHICLE_COUNT: usize = 2;
 
-const VEHICLE_SIZE: f32 = 2.0;
+const VEHICLE_SIZE: f32 = 4.0;
 const VEHICLE_MAX_SPEED: f32 = 300.0;
 const VEHICLE_MAX_SPEED_VEC: Vec2 = const_vec2!([VEHICLE_MAX_SPEED; 2]);
-const VEHICLE_MAX_FORCE: Vec2 = const_vec2!([120.0; 2]);
+const VEHICLE_MAX_FORCE: Vec2 = const_vec2!([60.0; 2]);
 const VEHICLE_MASS: f32 = 10.0;
 const VEHICLE_BODY_COLOR: Color = Color::WHITE;
 const VEHICLE_EDGE_COLOR: Color = Color::PINK;
 const VEHICLE_WANDER_SPEED: f32 = 150.0;
-const VEHICLE_PREDICT_DISTANCE: f32 = VEHICLE_SIZE * 16.0;
-const VEHICLE_PREDICT_RADIUS: f32 = VEHICLE_SIZE * 10.0;
+const VEHICLE_PREDICT_DISTANCE: f32 = VEHICLE_SIZE * 2.0;
+const VEHICLE_PREDICT_RADIUS: f32 = VEHICLE_SIZE * 1.5;
 const VEHICLE_VIEW_ANGLE: f32 = PI / 8.0;
 
 const VEHICLE_SECONDARY_BODY_COLOR: Color = Color::WHITE;
 const VEHICLE_SECONDARY_EDGE_COLOR: Color = Color::ORANGE_RED;
 
 // Distances
-const VEHICLE_SEPERATION_DIST: f32 = VEHICLE_SIZE * 6.0;
-const VEHICLE_ALIGN_DIST: f32 = VEHICLE_SIZE * 15.0;
-const VEHICLE_COHESION_DIST: f32 = VEHICLE_SIZE * 12.0;
-const VEHICLE_VIEW_DIST: f32 = VEHICLE_SIZE * 8.0;
+const VEHICLE_SEPERATION_DIST: f32 = VEHICLE_SIZE * 4.0;
+const VEHICLE_ALIGN_DIST: f32 = VEHICLE_SIZE * 12.0;
+const VEHICLE_COHESION_DIST: f32 = VEHICLE_SIZE * 10.0;
+const VEHICLE_VIEW_DIST: f32 = VEHICLE_SIZE * 4.0;
 const VEHICLE_SEPERATION_DIST_SQ: f32 = VEHICLE_SEPERATION_DIST * VEHICLE_SEPERATION_DIST;
 const VEHICLE_ALIGN_DIST_SQ: f32 = VEHICLE_ALIGN_DIST * VEHICLE_ALIGN_DIST;
 const VEHICLE_COHESION_DIST_SQ: f32 = VEHICLE_COHESION_DIST * VEHICLE_COHESION_DIST;
 const VEHICLE_VIEW_DIST_SQ: f32 = VEHICLE_VIEW_DIST * VEHICLE_VIEW_DIST;
 
 // Force factors
-const VEHICLE_SEPERATION_FACTOR: f32 = 2.0;
-const VEHICLE_ALIGN_FACTOR: f32 = 1.0;
-const VEHICLE_COHESION_FACTOR: f32 = 1.2;
+const VEHICLE_SEPERATION_FACTOR: f32 = 1.6;
+const VEHICLE_ALIGN_FACTOR: f32 = 1.3;
+const VEHICLE_COHESION_FACTOR: f32 = 1.1;
 const VEHICLE_LIMIT_FACTOR: f32 = 1.6;
-const VEHICLE_TARGET_FACTOR: f32 = 0.7;
+const VEHICLE_TARGET_FACTOR: f32 = 2.0;
 const VEHICLE_WANDER_FACTOR: f32 = 0.8;
-const VEHICLE_VIEW_FACTOR: f32 = 1.4;
+const VEHICLE_VIEW_FACTOR: f32 = 1.2;
 
 const LINE_WIDTH: f32 = 2.0;
 
@@ -412,10 +412,10 @@ fn calc_movement(
                     );
                     return;
                 }
-
+                
                 let desired = Vec2::new(
                     if fx {
-                        if transform.translation.x < WALL_MARGIN {
+                        if transform.translation.x < -bounds.x {
                             VEHICLE_MAX_SPEED
                         } else {
                             -VEHICLE_MAX_SPEED
@@ -424,7 +424,7 @@ fn calc_movement(
                         velocity.x
                     },
                     if fy {
-                        if transform.translation.y < WALL_MARGIN {
+                        if transform.translation.y < -bounds.y {
                             VEHICLE_MAX_SPEED
                         } else {
                             -VEHICLE_MAX_SPEED

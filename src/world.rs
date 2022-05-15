@@ -1,7 +1,7 @@
 use bevy::{prelude::*, window::WindowResized};
 use bevy_prototype_lyon::prelude::*;
 
-pub const WALL_MARGIN: f32 = 100.0;
+pub const WALL_MARGIN: f32 = 50.0;
 const WALL_LINE_WIDTH: f32 = 10.0;
 const WALL_COLOR: Color = Color::RED;
 
