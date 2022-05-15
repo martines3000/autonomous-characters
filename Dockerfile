@@ -6,7 +6,7 @@ WORKDIR /ac
 
 RUN bash ./web.sh
 
-FROM node:16-alpinež
+FROM node:16-alpine
 
 RUN npm install -g serve
 
