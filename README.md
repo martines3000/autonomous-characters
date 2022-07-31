@@ -4,5 +4,3 @@
 
 - Hold `space` to spawn more characters
 - Hold `left mouse button` to give the vehicles a target
-
-# todo &rarr; add short project description
