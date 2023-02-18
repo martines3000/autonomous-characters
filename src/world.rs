@@ -30,7 +30,7 @@ fn create_wall(mut commands: Commands, windows: Res<Windows>) {
     let builder = GeometryBuilder::new().add(&rect);
 
     commands
-        .spawn_bundle(builder.build(
+        .spawn(builder.build(
             DrawMode::Outlined {
                 fill_mode: {
                     bevy_prototype_lyon::draw::FillMode {

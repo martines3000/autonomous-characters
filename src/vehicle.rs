@@ -1,18 +1,18 @@
-use std::{f32::consts::PI};
+use std::f32::consts::PI;
 
-use bevy::{math::const_vec2, prelude::*};
+use bevy::prelude::*;
 use bevy_prototype_lyon::prelude::*;
 
 use rand::prelude::*;
 
-use crate::{world::WALL_MARGIN, MainCamera, target::TARGET_RADIUS};
+use crate::{target::TARGET_RADIUS, world::WALL_MARGIN, MainCamera};
 
 const VEHICLE_COUNT: usize = 100;
 
 const VEHICLE_SIZE: f32 = 4.0;
 const VEHICLE_MAX_SPEED: f32 = 300.0;
-const VEHICLE_MAX_SPEED_VEC: Vec2 = const_vec2!([VEHICLE_MAX_SPEED; 2]);
-const VEHICLE_MAX_FORCE: Vec2 = const_vec2!([60.0; 2]);
+const VEHICLE_MAX_SPEED_VEC: Vec2 = Vec2::from_array([VEHICLE_MAX_SPEED; 2]);
+const VEHICLE_MAX_FORCE: Vec2 = Vec2::from_array([60.0; 2]);
 const VEHICLE_MASS: f32 = 10.0;
 const VEHICLE_BODY_COLOR: Color = Color::WHITE;
 const VEHICLE_EDGE_COLOR: Color = Color::PINK;
@@ -100,7 +100,7 @@ fn spawn_vehicles(mut commands: Commands, windows: Res<Windows>) {
         let builder = GeometryBuilder::new().add(&shape).add(&line);
 
         commands
-            .spawn_bundle(builder.build(
+            .spawn(builder.build(
                 DrawMode::Outlined {
                     fill_mode: {
                         bevy_prototype_lyon::draw::FillMode {
@@ -124,15 +124,21 @@ fn spawn_vehicles(mut commands: Commands, windows: Res<Windows>) {
     }
 }
 
-fn vehicle_spawner(mut commands: Commands, windows: Res<Windows>, kbd: Res<Input<KeyCode>>,camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>){
+fn vehicle_spawner(
+    mut commands: Commands,
+    windows: Res<Windows>,
+    kbd: Res<Input<KeyCode>>,
+    camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+) {
     let window = windows.get_primary().unwrap();
     let window_size = Vec2::new(window.width() as f32, window.height() as f32);
     let (camera, camera_transform) = camera_query.single();
 
-    if let Some(_position) = window.cursor_position(){
-        if kbd.pressed(KeyCode::Space){
+    if let Some(_position) = window.cursor_position() {
+        if kbd.pressed(KeyCode::Space) {
             let ndc = (_position / window_size) * 2.0 - Vec2::ONE;
-            let ndc_to_world = camera_transform.compute_matrix() * camera.projection_matrix.inverse();
+            let ndc_to_world =
+                camera_transform.compute_matrix() * camera.projection_matrix().inverse();
             let world_pos = ndc_to_world.project_point3(ndc.extend(-1.0));
             let world_pos: Vec2 = world_pos.truncate();
 
@@ -141,16 +147,16 @@ fn vehicle_spawner(mut commands: Commands, windows: Res<Windows>, kbd: Res<Input
                 feature: shapes::RegularPolygonFeature::Radius(VEHICLE_SIZE),
                 ..shapes::RegularPolygon::default()
             };
-        
+
             let line = shapes::Line {
                 0: shape.center,
                 1: shape.center + Vec2::new(0.0, VEHICLE_SIZE),
             };
-        
+
             let builder = GeometryBuilder::new().add(&shape).add(&line);
-        
+
             commands
-                .spawn_bundle(builder.build(
+                .spawn(builder.build(
                     DrawMode::Outlined {
                         fill_mode: {
                             bevy_prototype_lyon::draw::FillMode {
@@ -172,9 +178,6 @@ fn vehicle_spawner(mut commands: Commands, windows: Res<Windows>, kbd: Res<Input
                 .insert(WanderTheta(0.0));
         }
     }
-
-
-   
 }
 
 fn seek_steer(world_pos: &Vec2, transform: &Transform, desired: &mut Vec2) {
@@ -343,7 +346,7 @@ fn calc_movement(
 
     if let Some(_position) = window.cursor_position() {
         let ndc = (_position / window_size) * 2.0 - Vec2::ONE;
-        let ndc_to_world = camera_transform.compute_matrix() * camera.projection_matrix.inverse();
+        let ndc_to_world = camera_transform.compute_matrix() * camera.projection_matrix().inverse();
         let world_pos = ndc_to_world.project_point3(ndc.extend(-1.0));
         let world_pos: Vec2 = world_pos.truncate();
 
@@ -412,7 +415,7 @@ fn calc_movement(
                     );
                     return;
                 }
-                
+
                 let desired = Vec2::new(
                     if fx {
                         if transform.translation.x < -bounds.x {

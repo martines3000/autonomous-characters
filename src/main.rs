@@ -4,7 +4,6 @@ mod target;
 mod vehicle;
 mod world;
 
-use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::{prelude::*, render::camera::ScalingMode};
 use bevy_prototype_lyon::prelude::*;
 use debug::DebugPlugin;
@@ -13,25 +12,24 @@ use vehicle::VehiclePlugin;
 use world::WorldPlugin;
 
 pub const CLEAR: Color = Color::rgb(0.3, 0.3, 0.3);
-pub const RESOLUTION: f32 = 16.0 / 9.0;
 
 fn main() {
-    let height = 900.0;
     App::new()
         .insert_resource(ClearColor(CLEAR))
         .insert_resource(Msaa { samples: 4 })
-        .insert_resource(WindowDescriptor {
-            width: height * RESOLUTION,
-            height: height,
-            title: "Autonomous-characters".to_string(),
-            ..Default::default()
-        })
-        .insert_resource(Vec::<Vec<&Transform>>::with_capacity(1000))
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            window: WindowDescriptor {
+                title: "3D Particle simulation".to_string(),
+                width: 1280.,
+                height: 720.,
+                canvas: Some("#bevy".to_owned()),
+                fit_canvas_to_parent: true,
+                ..default()
+            },
+            ..default()
+        }))
         .add_startup_system(spawn_camera)
         .add_startup_system(hide_cursor)
-        .add_plugins(DefaultPlugins)
-        // .add_plugin(LogDiagnosticsPlugin::default())
-        // .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .add_plugin(DebugPlugin)
         .add_plugin(WorldPlugin)
         .add_plugin(ShapePlugin)
@@ -44,17 +42,19 @@ fn main() {
 struct MainCamera;
 
 fn spawn_camera(mut commands: Commands) {
-    let mut camera = OrthographicCameraBundle::new_2d();
-
-    camera.orthographic_projection.top = 1.0;
-    camera.orthographic_projection.bottom = -1.0;
-
-    camera.orthographic_projection.right = 1.0 * RESOLUTION;
-    camera.orthographic_projection.left = -1.0 * RESOLUTION;
-
-    camera.orthographic_projection.scaling_mode = ScalingMode::WindowSize;
-
-    commands.spawn_bundle(camera).insert(MainCamera);
+    commands
+        .spawn(Camera2dBundle {
+            projection: OrthographicProjection {
+                top: 1.0,
+                bottom: -1.0,
+                right: 1.0,
+                left: -1.0,
+                scaling_mode: ScalingMode::WindowSize,
+                ..OrthographicProjection::default()
+            },
+            ..Default::default()
+        })
+        .insert(MainCamera);
 }
 
 fn hide_cursor(mut windows: ResMut<Windows>) {

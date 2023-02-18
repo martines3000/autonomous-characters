@@ -23,7 +23,7 @@ fn crate_target(mut commands: Commands) {
     };
 
     commands
-        .spawn_bundle(GeometryBuilder::build_as(
+        .spawn(GeometryBuilder::build_as(
             &shape,
             DrawMode::Outlined {
                 fill_mode: FillMode::color(Color::NONE),
@@ -55,7 +55,7 @@ fn update(
 
     if let Some(_position) = window.cursor_position() {
         let ndc = (_position / window_size) * 2.0 - Vec2::ONE;
-        let ndc_to_world = camera_transform.compute_matrix() * camera.projection_matrix.inverse();
+        let ndc_to_world = camera_transform.compute_matrix() * camera.projection_matrix().inverse();
         let world_pos = ndc_to_world.project_point3(ndc.extend(-1.0));
         let world_pos: Vec2 = world_pos.truncate();
 

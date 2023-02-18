@@ -1,18 +1,39 @@
-FROM rust:1.60-alpine AS builder
-RUN apk add binaryen jq libxcb-dev libxkbcommon-dev musl-dev bash openssl-dev
+###############################
+# Stage 1 - the build process #
+###############################
+FROM rust:1.67 as builder
 
-COPY . /ac
-WORKDIR /ac
+RUN apt-get update && apt-get install -y clang
 
-RUN bash ./web.sh
+WORKDIR /app
 
-FROM node:16-alpine
+# Install trunk
+RUN cargo install --locked --version 0.16.0 trunk
 
-RUN npm install -g serve
+COPY . .
 
-COPY --from=builder /ac/out/ ./out/
-COPY --from=builder /ac/index.html .
+# Install wasm-bindgen
+RUN cargo install --version 0.2.84 wasm-bindgen-cli
 
-CMD ["npx", "serve", "."]  
+# Add wasm32-unknown-unknown target
+RUN rustup target add wasm32-unknown-unknown
 
+# Build the app in release mode
+RUN trunk build --release
 
+########################################
+# Stage 2 - the production environment #
+########################################
+FROM nginx:1.23.3-alpine
+
+# Remove default nginx website
+RUN rm -rf /usr/share/nginx/html/*
+
+# Copy nginx config file
+COPY ./web/nginx.conf /etc/nginx/nginx.conf
+
+# Copy dist folder fro build stage to nginx public folder
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Start NgInx service
+CMD ["nginx", "-g", "daemon off;"]
